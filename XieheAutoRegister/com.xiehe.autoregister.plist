@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 排班ID - 从App中获取目标医生的排班ID -->
+    <key>schId</key>
+    <string></string>
+    
+    <!-- 患者ID - 登录后从用户信息中获取 -->
+    <key>patId</key>
+    <string></string>
+    
+    <!-- 医院就诊卡号 -->
+    <key>hosPatCardNo</key>
+    <string></string>
+    
+    <!-- 就诊卡类型 -->
+    <key>hosPatCardType</key>
+    <string></string>
+    
+    <!-- 患者姓名 -->
+    <key>patName</key>
+    <string></string>
+    
+    <!-- 手机号 -->
+    <key>phoneNo</key>
+    <string></string>
+    
+    <!-- 身份证号 -->
+    <key>cardNo</key>
+    <string></string>
+    
+    <!-- 科室ID -->
+    <key>subjectId</key>
+    <string></string>
+    
+    <!-- 部门ID -->
+    <key>deptId</key>
+    <string></string>
+    
+    <!-- 触发时间 - 小时 (24小时制) -->
+    <key>triggerHour</key>
+    <integer>15</integer>
+    
+    <!-- 触发时间 - 分钟 -->
+    <key>triggerMinute</key>
+    <integer>0</integer>
+    
+    <!-- 触发时间 - 秒 -->
+    <key>triggerSecond</key>
+    <integer>0</integer>
+</dict>
+</plist>

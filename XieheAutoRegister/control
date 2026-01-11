@@ -1,0 +1,9 @@
+Package: com.xiehe.autoregister
+Name: XieheAutoRegister
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: 协和医院自动挂号插件 - 定时自动发送挂号请求
+Maintainer: Your Name
+Author: Your Name
+Section: Tweaks
