@@ -480,63 +480,6 @@ static void processPatientDetailResponse(NSDictionary *responseDict, NSString *u
     });
 }
 
-// Hook NSURLSessionDataTask 完成回调
-%hook __NSCFLocalDataTask
-
-- (void)connection:(id)connection didReceiveResponse:(NSURLResponse *)response {
-    %orig;
-}
-
-%end
-
-// Hook NSURLSession dataTaskWithRequest:completionHandler:
-%hook NSURLSession
-
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request 
-                            completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
-    
-    NSString *urlString = [[request URL] absoluteString];
-    
-    // 检查是否是 /20002/104 排班请求 或 /20004/110 患者详情请求
-    BOOL isDocSchRequest = urlString && [urlString containsString:@"/20002/104"];
-    BOOL isPatientDetailRequest = urlString && [urlString containsString:@"/20004/110"];
-    
-    if (isDocSchRequest || isPatientDetailRequest) {
-        XHLog(@"[NSURLSession] 拦截请求: %@", urlString);
-        
-        // 包装 completionHandler
-        void (^wrappedHandler)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
-            if (data && !error) {
-                XHLog(@"[NSURLSession] 响应到达, 数据大小: %lu bytes", (unsigned long)[data length]);
-                
-                // 解析 JSON
-                NSError *jsonError = nil;
-                id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
-                if (!jsonError && [json isKindOfClass:[NSDictionary class]]) {
-                    if (isDocSchRequest) {
-                        processDocSchListResponse((NSDictionary *)json, urlString);
-                    } else if (isPatientDetailRequest) {
-                        processPatientDetailResponse((NSDictionary *)json, urlString);
-                    }
-                } else {
-                    XHLog(@"[NSURLSession] JSON 解析失败: %@", jsonError);
-                }
-            }
-            
-            // 调用原始 handler
-            if (completionHandler) {
-                completionHandler(data, response, error);
-            }
-        };
-        
-        return %orig(request, wrappedHandler);
-    }
-    
-    return %orig;
-}
-
-%end
-
 
 // Hook AFURLSessionManager (AFNetworking) 的 dataTask 创建
 %hook AFURLSessionManager
