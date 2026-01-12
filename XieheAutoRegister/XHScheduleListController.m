@@ -148,7 +148,7 @@ static NSDictionary *gSelectedScheduleDict = nil;
     [super viewDidLoad];
     
     self.view.backgroundColor = [UIColor whiteColor];
-    self.title = [NSString stringWithFormat:@"排班列表 - %@", self.nowDateStr ?: @""];
+    self.title = @"排班列表";
     
     // 添加关闭按钮
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"关闭" 
@@ -165,9 +165,8 @@ static NSDictionary *gSelectedScheduleDict = nil;
     [self.view addSubview:tableView];
     self.tableView = tableView;
     
-    XHLog(@"排班数据准备完成: 上午 %lu 条, 中午 %lu 条, 下午 %lu 条",
+    XHLog(@"排班数据准备完成: 上午 %lu 条, 下午 %lu 条",
           (unsigned long)self.amSchedules.count,
-          (unsigned long)self.noonSchedules.count,
           (unsigned long)self.pmSchedules.count);
 }
 
@@ -180,8 +179,7 @@ static NSDictionary *gSelectedScheduleDict = nil;
 - (NSArray<NSDictionary *> *)schedulesForSection:(NSInteger)section {
     switch (section) {
         case 0: return self.amSchedules ?: @[];
-        case 1: return self.noonSchedules ?: @[];
-        case 2: return self.pmSchedules ?: @[];
+        case 1: return self.pmSchedules ?: @[];
         default: return @[];
     }
 }
@@ -189,8 +187,7 @@ static NSDictionary *gSelectedScheduleDict = nil;
 - (NSString *)titleForSection:(NSInteger)section {
     switch (section) {
         case 0: return [NSString stringWithFormat:@"上午 (%lu)", (unsigned long)(self.amSchedules.count)];
-        case 1: return [NSString stringWithFormat:@"中午 (%lu)", (unsigned long)(self.noonSchedules.count)];
-        case 2: return [NSString stringWithFormat:@"下午 (%lu)", (unsigned long)(self.pmSchedules.count)];
+        case 1: return [NSString stringWithFormat:@"下午 (%lu)", (unsigned long)(self.pmSchedules.count)];
         default: return @"";
     }
 }
@@ -198,7 +195,7 @@ static NSDictionary *gSelectedScheduleDict = nil;
 #pragma mark - UITableViewDataSource
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return 3; // 上午、中午、下午
+    return 2; // 上午、下午
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
@@ -223,13 +220,15 @@ static NSDictionary *gSelectedScheduleDict = nil;
         }
         cell.textLabel.font = [UIFont boldSystemFontOfSize:16];
         
-        // 副标题: 科室 | 时间 | 剩余号源
+        // 副标题: 日期 | 科室 | 时间 | 剩余号源
+        NSString *schDate = schedule[@"schDate"] ?: @"";
         NSString *sectName = schedule[@"sectName"] ?: @"";
         NSString *startTime = schedule[@"startTime"] ?: @"";
         id resNo = schedule[@"resNo"];
         NSString *remainStr = resNo ? [NSString stringWithFormat:@"余号: %@", resNo] : @"";
         
         NSMutableArray *detailParts = [NSMutableArray array];
+        if (schDate.length > 0) [detailParts addObject:schDate];
         if (sectName.length > 0) [detailParts addObject:sectName];
         if (startTime.length > 0) [detailParts addObject:startTime];
         if (remainStr.length > 0) [detailParts addObject:remainStr];
