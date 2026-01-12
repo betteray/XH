@@ -128,70 +128,6 @@
 - (id)mediLevels;
 @end
 
-// 保存医生排班数据副本
-static NSMutableArray *gDocSchedulesCopy = nil;
-static NSMutableArray *gPendingScheduleModels = nil;  // 待处理的排班模型
-static NSString *gNowDateStr = nil;
-static BOOL gIsDocSchListRequestPending = NO;  // 是否有 /20002/104 请求待处理
-static NSString *gPendingSubjectId = nil;  // 当前请求的 subjectId
-static NSString *gPendingSubjectName = nil;  // 当前请求的 subjectName
-
-// 从排班模型中提取数据为字典 (使用 runtime 读取 ivar)
-static NSDictionary* extractScheduleData(id schedule) {
-    if (!schedule) return nil;
-    
-    NSMutableDictionary *data = [NSMutableDictionary dictionary];
-    
-    // 使用 runtime 获取类的所有 ivar（实例变量）
-    Class cls = [schedule class];
-    while (cls && cls != [NSObject class]) {
-        unsigned int ivarCount = 0;
-        Ivar *ivars = class_copyIvarList(cls, &ivarCount);
-        
-        for (unsigned int i = 0; i < ivarCount; i++) {
-            const char *ivarName = ivar_getName(ivars[i]);
-            if (!ivarName) continue;
-            
-            NSString *key = [NSString stringWithUTF8String:ivarName];
-            // 移除下划线前缀
-            if ([key hasPrefix:@"_"]) {
-                key = [key substringFromIndex:1];
-            }
-            
-            @try {
-                id value = object_getIvar(schedule, ivars[i]);
-                if (value && value != [NSNull null]) {
-                    // 只保存 JSON 兼容的类型
-                    if ([value isKindOfClass:[NSString class]] || 
-                        [value isKindOfClass:[NSNumber class]]) {
-                        data[key] = value;
-                    } else if ([value isKindOfClass:[NSArray class]] || 
-                               [value isKindOfClass:[NSDictionary class]]) {
-                        if ([NSJSONSerialization isValidJSONObject:value]) {
-                            data[key] = value;
-                        } else {
-                            data[key] = [value description];
-                        }
-                    } else {
-                        data[key] = [value description];
-                    }
-                }
-            } @catch (NSException *e) {
-                // 忽略不存在的属性
-            }
-        }
-        
-        if (ivars) {
-            free(ivars);
-        }
-        
-        // 遍历父类
-        cls = class_getSuperclass(cls);
-    }
-    
-    return data;
-}
-
 @interface HsXHPatientDetailModel : NSObject
 - (id)patId;
 - (id)patId32;
@@ -434,166 +370,170 @@ static void sendRegistrationRequest() {
     %orig;
 }
 
-// Hook startAsynchronously: 拦截响应数据
-- (void)startAsynchronously:(id)callback {
-    NSString *urlString = [self URLString];
+%end
+
+
+// ============== NSURLSession 拦截 ==============
+// 处理 /20002/104 响应数据
+// 实际响应结构: { result: true, data: [ { schId, accessSchId, dayType, docName, subjectId, ... }, ... ] }
+static void processDocSchListResponse(NSDictionary *responseDict, NSString *urlString) {
+    if (!responseDict) return;
     
-    // 检查是否是医生排班请求 /20002/104
-    if (urlString && [urlString containsString:@"/20002/104"]) {
-        XHLog(@"========== 拦截医生排班请求 /20002/104 ==========");
-        XHLog(@"URLString: %@", urlString);
+    // 检查 result 字段
+    id resultValue = responseDict[@"result"];
+    BOOL success = [resultValue boolValue];
+    if (!success) {
+        XHLog(@"[响应] 请求失败, result=%@", resultValue);
+        return;
+    }
+    
+    // 获取 data 数组
+    id dataObj = responseDict[@"data"];
+    if (![dataObj isKindOfClass:[NSArray class]]) {
+        XHLog(@"[响应] data 字段不是数组, 类型: %@", [dataObj class]);
+        return;
+    }
+    
+    NSArray *dataArray = (NSArray *)dataObj;
+    XHLog(@"[响应] 获取到 %lu 条排班数据", (unsigned long)[dataArray count]);
+    
+    // 分类排班数据
+    NSMutableArray *amData = [NSMutableArray array];   // 上午 dayType=1
+    NSMutableArray *pmData = [NSMutableArray array];   // 下午 dayType=2
+    NSMutableArray *noonData = [NSMutableArray array]; // 中午/其他
+    NSString *nowDateStr = nil;
+    
+    for (id item in dataArray) {
+        if (![item isKindOfClass:[NSDictionary class]]) continue;
         
-        // 设置待处理标志，准备收集 HsSchedulModel 数据
-        gIsDocSchListRequestPending = YES;
-        gPendingScheduleModels = [NSMutableArray array];
+        NSDictionary *sch = (NSDictionary *)item;
         
-        // 延迟处理收集到的数据（等待所有模型解析完成）
-        // 捕获数组副本，避免在 block 执行时全局变量已被修改
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            // 获取并复制当前收集的数据
-            NSArray *collectedData = gPendingScheduleModels ? [gPendingScheduleModels copy] : @[];
-            
-            XHLog(@"[延迟处理] 收集到 %lu 个排班数据", (unsigned long)[collectedData count]);
-            
-            // 重置状态（先重置，避免后续请求干扰）
-            gIsDocSchListRequestPending = NO;
-            gPendingScheduleModels = nil;
-            
-            if ([collectedData count] > 0) {
-                // 分类排班数据
-                NSMutableArray *amData = [NSMutableArray array];
-                NSMutableArray *pmData = [NSMutableArray array];
-                NSMutableArray *noonData = [NSMutableArray array];
-                NSString *nowDateStr = nil;
-                
-                for (id item in collectedData) {
-                    if (![item isKindOfClass:[NSDictionary class]]) {
-                        XHLog(@"[警告] 数据类型不是字典: %@", [item class]);
-                        continue;
-                    }
-                    NSDictionary *data = (NSDictionary *)item;
-                    
-                    XHLog(@"[处理] schId=%@, accessSchId=%@, docName=%@, dayType=%@",
-                          data[@"schId"], data[@"accessSchId"], data[@"docName"], data[@"dayType"]);
-                    
-                    // 获取日期
-                    if (!nowDateStr && data[@"schDate"]) {
-                        id schDate = data[@"schDate"];
-                        if ([schDate isKindOfClass:[NSString class]]) {
-                            nowDateStr = schDate;
-                        } else {
-                            nowDateStr = [schDate description];
-                        }
-                    }
-                    
-                    // 按时段分类 (dayType 可能是 NSString 或 NSNumber)
-                    id dayTypeValue = data[@"dayType"];
-                    NSString *dayType = nil;
-                    if ([dayTypeValue isKindOfClass:[NSString class]]) {
-                        dayType = dayTypeValue;
-                    } else if ([dayTypeValue isKindOfClass:[NSNumber class]]) {
-                        dayType = [dayTypeValue stringValue];
-                    }
-                    
-                    if ([dayType isEqualToString:@"1"]) {
-                        [amData addObject:data];
-                    } else if ([dayType isEqualToString:@"2"]) {
-                        [pmData addObject:data];
-                    } else {
-                        [noonData addObject:data];
-                    }
-                }
-                
-                XHLog(@"[分类完成] 上午:%lu, 下午:%lu, 其他:%lu", 
-                      (unsigned long)[amData count], (unsigned long)[pmData count], (unsigned long)[noonData count]);
-                
-                // 显示排班选择列表
-                if ([amData count] + [pmData count] + [noonData count] > 0) {
-                    [XHScheduleListController showWithScheduleData:amData 
-                                                            pmData:pmData 
-                                                          noonData:noonData 
-                                                        nowDateStr:nowDateStr ?: @""];
-                }
-            }
+        // 获取日期 (取第一个有效的 schDate)
+        if (!nowDateStr && sch[@"schDate"]) {
+            nowDateStr = sch[@"schDate"];
+        }
+        
+        // 按 dayType 分类
+        NSString *dayType = [sch[@"dayType"] description];
+        
+        if ([dayType isEqualToString:@"1"]) {
+            [amData addObject:sch];
+        } else if ([dayType isEqualToString:@"2"]) {
+            [pmData addObject:sch];
+        } else {
+            [noonData addObject:sch];
+        }
+    }
+    
+    XHLog(@"[响应] 分类完成 - 上午:%lu, 下午:%lu, 其他:%lu, 日期:%@",
+          (unsigned long)[amData count], (unsigned long)[pmData count], 
+          (unsigned long)[noonData count], nowDateStr);
+    
+    // 显示排班选择列表
+    if ([amData count] + [pmData count] + [noonData count] > 0) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [XHScheduleListController showWithScheduleData:amData
+                                                    pmData:pmData
+                                                  noonData:noonData
+                                                nowDateStr:nowDateStr ?: @""];
         });
     }
-    
-    // 检查是否是科室排班列表请求
-    if ([self isKindOfClass:%c(HsUnifiedRegistrationDeptSchListRequest)]) {
-        HsUnifiedRegistrationDeptSchListRequest *req = (HsUnifiedRegistrationDeptSchListRequest *)self;
-        XHLog(@"========== HsUnifiedRegistrationDeptSchListRequest 请求 ==========");
-        XHLog(@"deptId:      %@", [req deptId]);
-        XHLog(@"subjectId:   %@", [req subjectId]);
-        XHLog(@"subjectName: %@", [req subjectName]);
-        XHLog(@"schDate:     %@", [req schDate]);
-        XHLog(@"dayType:     %@", [req dayType]);
-        XHLog(@"docId:       %@", [req docId]);
-        XHLog(@"docName:     %@", [req docName]);
-        XHLog(@"================================================================");
-        
-        // 保存 subjectId 和 subjectName，供后续 /20002/104 请求使用
-        if ([req subjectId]) {
-            gPendingSubjectId = [[req subjectId] copy];
-        }
-        if ([req subjectName]) {
-            gPendingSubjectName = [[req subjectName] copy];
-        }
-    }
-    
+}
+
+// Hook NSURLSessionDataTask 完成回调
+%hook __NSCFLocalDataTask
+
+- (void)connection:(id)connection didReceiveResponse:(NSURLResponse *)response {
     %orig;
 }
 
 %end
 
+// Hook NSURLSession dataTaskWithRequest:completionHandler:
+%hook NSURLSession
 
-// Hook HsSchedulModel 来拦截医生排班数据的设置
-// 当 /20002/104 响应解析时，会创建 HsSchedulModel 对象并设置其属性
-%hook HsSchedulModel
-
-- (void)setSchId:(id)schId {
-    %orig;
-    if (schId) {
-        XHLog(@"[HsSchedulModel] setSchId: %@", schId);
-    }
-}
-
-- (void)setAccessSchId:(id)accessSchId {
-    %orig;
-    if (accessSchId) {
-        XHLog(@"[HsSchedulModel] setAccessSchId: %@", accessSchId);
-    }
-}
-
-// 在 setDocName: 时提取数据，此时所有关键属性应该都已设置
-- (void)setDocName:(id)docName {
-    %orig;
-    if (docName) {
-        XHLog(@"[HsSchedulModel] setDocName: %@", docName);
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request 
+                            completionHandler:(void (^)(NSData *data, NSURLResponse *response, NSError *error))completionHandler {
+    
+    NSString *urlString = [[request URL] absoluteString];
+    
+    // 检查是否是 /20002/104 请求
+    if (urlString && [urlString containsString:@"/20002/104"]) {
+        XHLog(@"[NSURLSession] 拦截请求: %@", urlString);
         
-        // 当 docName 设置时，提取完整数据
-        if (gIsDocSchListRequestPending) {
-            if (!gPendingScheduleModels) {
-                gPendingScheduleModels = [NSMutableArray array];
+        // 包装 completionHandler
+        void (^wrappedHandler)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (data && !error) {
+                XHLog(@"[NSURLSession] /20002/104 响应到达, 数据大小: %lu bytes", (unsigned long)[data length]);
+                
+                // 解析 JSON
+                NSError *jsonError = nil;
+                id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
+                if (!jsonError && [json isKindOfClass:[NSDictionary class]]) {
+                    processDocSchListResponse((NSDictionary *)json, urlString);
+                } else {
+                    XHLog(@"[NSURLSession] JSON 解析失败: %@", jsonError);
+                }
             }
             
-            // 立即提取数据
-            NSDictionary *extractedData = extractScheduleData(self);
-            if (extractedData && extractedData[@"schId"] && extractedData[@"accessSchId"] && extractedData[@"docName"]) {
-                // 添加 subjectId 和 subjectName（从之前的 DeptSchListRequest 保存的）
-                NSMutableDictionary *data = [extractedData mutableCopy];
-                if (gPendingSubjectId && !data[@"subjectId"]) {
-                    data[@"subjectId"] = gPendingSubjectId;
-                }
-                if (gPendingSubjectName && !data[@"subjectName"]) {
-                    data[@"subjectName"] = gPendingSubjectName;
-                }
-                
-                XHLog(@"[HsSchedulModel] 提取完整数据: schId=%@, accessSchId=%@, docName=%@, dayType=%@, subjectId=%@", 
-                      data[@"schId"], data[@"accessSchId"], data[@"docName"], data[@"dayType"], data[@"subjectId"]);
-                [gPendingScheduleModels addObject:data];
+            // 调用原始 handler
+            if (completionHandler) {
+                completionHandler(data, response, error);
             }
-        }
+        };
+        
+        return %orig(request, wrappedHandler);
     }
+    
+    return %orig;
+}
+
+%end
+
+
+// Hook AFURLSessionManager (AFNetworking) 的 dataTask 创建
+%hook AFURLSessionManager
+
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
+                               uploadProgress:(id)uploadProgressBlock
+                             downloadProgress:(id)downloadProgressBlock
+                            completionHandler:(void (^)(NSURLResponse *response, id responseObject, NSError *error))completionHandler {
+    
+    NSString *urlString = [[request URL] absoluteString];
+    
+    // 检查是否是 /20002/104 请求
+    if (urlString && [urlString containsString:@"/20002/104"]) {
+        XHLog(@"[AFNetworking] 拦截请求: %@", urlString);
+        
+        // 包装 completionHandler
+        void (^wrappedHandler)(NSURLResponse *, id, NSError *) = ^(NSURLResponse *response, id responseObject, NSError *error) {
+            if (responseObject && !error) {
+                XHLog(@"[AFNetworking] /20002/104 响应到达, 类型: %@", [responseObject class]);
+                
+                // responseObject 可能是 NSDictionary 或 NSData
+                if ([responseObject isKindOfClass:[NSDictionary class]]) {
+                    // 直接使用字典
+                    processDocSchListResponse((NSDictionary *)responseObject, urlString);
+                } else if ([responseObject isKindOfClass:[NSData class]]) {
+                    // 解析 JSON
+                    NSError *jsonError = nil;
+                    id json = [NSJSONSerialization JSONObjectWithData:(NSData *)responseObject options:0 error:&jsonError];
+                    if (!jsonError && [json isKindOfClass:[NSDictionary class]]) {
+                        processDocSchListResponse((NSDictionary *)json, urlString);
+                    }
+                }
+            }
+            
+            // 调用原始 handler
+            if (completionHandler) {
+                completionHandler(response, responseObject, error);
+            }
+        };
+        
+        return %orig(request, uploadProgressBlock, downloadProgressBlock, wrappedHandler);
+    }
+    
+    return %orig;
 }
 
 %end

@@ -215,24 +215,26 @@ static NSDictionary *gSelectedScheduleDict = nil;
         
         // 主标题: 医生名 - 职称
         NSString *docName = schedule[@"docName"] ?: @"未知医生";
-        NSString *titleShow = schedule[@"titleShow"] ?: @"";
-        cell.textLabel.text = [NSString stringWithFormat:@"%@ - %@", docName, titleShow];
+        NSString *mediLevel = schedule[@"mediLevel"] ?: @"";
+        if (mediLevel.length > 0) {
+            cell.textLabel.text = [NSString stringWithFormat:@"%@ - %@", docName, mediLevel];
+        } else {
+            cell.textLabel.text = docName;
+        }
         cell.textLabel.font = [UIFont boldSystemFontOfSize:16];
         
-        // 副标题: 日期 时间段 剩余号源
-        NSString *accessSchTime = schedule[@"accessSchTime"] ?: @"";
-        NSString *dayTypeString = schedule[@"dayTypeString"] ?: @"";
+        // 副标题: 科室 | 时间 | 剩余号源
+        NSString *sectName = schedule[@"sectName"] ?: @"";
+        NSString *startTime = schedule[@"startTime"] ?: @"";
         id resNo = schedule[@"resNo"];
-        NSString *remainStr = resNo ? [NSString stringWithFormat:@"剩余: %@", resNo] : @"无号源信息";
-        NSString *goodAt = schedule[@"goodAt"] ?: @"";
+        NSString *remainStr = resNo ? [NSString stringWithFormat:@"余号: %@", resNo] : @"";
         
-        // 截取擅长的前30个字符
-        if (goodAt.length > 30) {
-            goodAt = [[goodAt substringToIndex:30] stringByAppendingString:@"..."];
-        }
+        NSMutableArray *detailParts = [NSMutableArray array];
+        if (sectName.length > 0) [detailParts addObject:sectName];
+        if (startTime.length > 0) [detailParts addObject:startTime];
+        if (remainStr.length > 0) [detailParts addObject:remainStr];
         
-        cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ %@ %@", 
-                                     accessSchTime, dayTypeString, remainStr];
+        cell.detailTextLabel.text = [detailParts componentsJoinedByString:@" | "];
         cell.detailTextLabel.font = [UIFont systemFontOfSize:13];
         cell.detailTextLabel.textColor = [UIColor grayColor];
         
@@ -253,12 +255,10 @@ static NSDictionary *gSelectedScheduleDict = nil;
         // 如果是当前选中的排班，显示选中标记
         NSDictionary *selected = gSelectedScheduleDict;
         if (selected) {
-            NSString *currentDocId = schedule[@"docId"];
-            NSString *selectedDocId = selected[@"docId"];
-            NSString *currentDate = schedule[@"accessSchTime"];
-            NSString *selectedDate = selected[@"accessSchTime"];
+            NSString *currentSchId = schedule[@"schId"];
+            NSString *selectedSchId = selected[@"schId"];
             
-            if ([currentDocId isEqualToString:selectedDocId] && [currentDate isEqualToString:selectedDate]) {
+            if ([currentSchId isEqualToString:selectedSchId]) {
                 cell.accessoryType = UITableViewCellAccessoryCheckmark;
             }
         }
@@ -283,22 +283,22 @@ static NSDictionary *gSelectedScheduleDict = nil;
         // 保存选中的排班
         [XHScheduleListController saveSelectedScheduleDict:schedule];
         
-        // 显示选中信息
-        NSString *docName = schedule[@"docName"] ?: @"未知";
-        NSString *docId = schedule[@"docId"] ?: @"未知";
-        NSString *accessSchTime = schedule[@"accessSchTime"] ?: @"";
-        NSString *accessSchId = schedule[@"accessSchId"] ?: @"未知";
-        NSString *dayTypeString = schedule[@"dayTypeString"] ?: @"";
+        // 提取显示信息
+        NSString *sectName = schedule[@"sectName"] ?: @"未知科室";      // 科室名称
+        NSString *docName = schedule[@"docName"] ?: @"未知医生";        // 医生名称
+        NSString *schDate = schedule[@"schDate"] ?: @"";               // 排班日期
+        NSString *startTime = schedule[@"startTime"] ?: @"";           // 开始时间
+        NSString *dayTypeName = schedule[@"dayTypeName"] ?: @"";       // 上午/下午
         
         XHLog(@"✅ 已选中排班:");
+        XHLog(@"   科室: %@", sectName);
         XHLog(@"   医生: %@", docName);
-        XHLog(@"   docId: %@", docId);
-        XHLog(@"   accessSchId: %@", accessSchId);
-        XHLog(@"   日期: %@ %@", accessSchTime, dayTypeString);
+        XHLog(@"   日期: %@", schDate);
+        XHLog(@"   时间: %@ %@", dayTypeName, startTime);
         
-        // 弹出提示
-        NSString *message = [NSString stringWithFormat:@"医生: %@\ndocId: %@\n日期: %@ %@\naccessSchId: %@", 
-                            docName, docId, accessSchTime, dayTypeString, accessSchId];
+        // 弹出提示 - 只显示关键信息
+        NSString *message = [NSString stringWithFormat:@"科室: %@\n医生: %@\n日期: %@\n时间: %@ %@", 
+                            sectName, docName, schDate, dayTypeName, startTime];
         
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"已选中排班"
                                                                        message:message
