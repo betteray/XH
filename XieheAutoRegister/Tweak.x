@@ -227,7 +227,7 @@ static NSDictionary* extractScheduleData(id schedule) {
 
 // 触发时间配置
 static NSInteger kTriggerHour = 22;            // 触发小时 (24小时制) - 15:00
-static NSInteger kTriggerMinute = 26;           // 触发分钟
+static NSInteger kTriggerMinute = 45;           // 触发分钟
 
 
 // ============== 全局变量 ==============
@@ -365,16 +365,14 @@ static void sendRegistrationRequest() {
     [request setSubjectId:subjectId];
     [request setDeptId:deptId];
     
-    // 发送请求
-    [request startWithSuccessBlock:^(id req, int response, id data) {
-        XHLog(@"✅ 挂号请求成功!");
-        XHLog(@"响应数据: %@ - %@", req, data);
+    // 发送请求 - 使用空 block 避免崩溃
+    [request startWithSuccessBlock:^(__unused id req, int response, __unused id data) {
+        XHLog(@"✅ 挂号请求成功! response=%d", response);
         
-    } failureBlock:^(id req) {
-        XHLog(@"❌ 挂号请求失败: %@", req);
+    } failureBlock:^(__unused id error) {
+        XHLog(@"❌ 挂号请求失败");
     }];
     
-    XHLog(@"请求已发送，等待响应...");
     XHLog(@"请求已发送，等待响应...");
 }
 
