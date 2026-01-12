@@ -1,6 +1,6 @@
 {
 	"servers": {
-		"my-mcp-server-8dd48a4a": {
+		"ida-pro-mcp": {
 			"url": "http://127.0.0.1:13337/sse",
 			"type": "http"
 		}

@@ -111,8 +111,8 @@
 static NSString *kTargetHosPatCardNo = @"";    // 就诊卡号
 static NSString *kTargetHosPatCardType = @"";  // 卡类型
 
-static NSString *kTargetSubjectId = @"6f13cc99898e415a9af5e8f29bad4e4b";       // 科室ID
 static NSString *kTargetDeptId = @"3725ea598f9e456f8040ecf280a5de8c";          // 部门ID
+static NSString *kTargetSubjectId = @"6f13cc99898e415a9af5e8f29bad4e4b";       // 科室ID
 static NSString *kTargetSchId = @"4250b6dc15cf4a6fa353387810f45603";           // 排班ID - 需要动态获取
 
 // 触发时间配置
