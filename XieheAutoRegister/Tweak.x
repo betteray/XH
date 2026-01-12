@@ -9,6 +9,7 @@
 #import <UIKit/UIKit.h>
 
 #import "PreciseGCDTimer.h"
+#import "XHPatientDetailDisplayController.h"
 
 // ============== 类声明 ==============
 
@@ -267,7 +268,13 @@ static void sendRegistrationRequest() {
         return;
     }
 
-   gHsXHPatientDetailModel = model;
+    gHsXHPatientDetailModel = model;
+    
+    // 保存到沙盒
+    [XHPatientDetailDisplayController savePatientModel:model];
+    
+    // 弹出控制器显示详情
+    [XHPatientDetailDisplayController showWithPatientModel:model];
 }
 
 %end
