@@ -440,6 +440,46 @@ static void processDocSchListResponse(NSDictionary *responseDict, NSString *urlS
     }
 }
 
+// 处理 /20004/110 患者详情响应数据
+// 实际响应结构: { result: true, data: { patId, patName, cardNo, phoneNo, ... } }
+static void processPatientDetailResponse(NSDictionary *responseDict, NSString *urlString) {
+    if (!responseDict) return;
+    
+    // 检查 result 字段
+    id resultValue = responseDict[@"result"];
+    BOOL success = [resultValue boolValue];
+    if (!success) {
+        XHLog(@"[患者详情] 请求失败, result=%@", resultValue);
+        return;
+    }
+    
+    // 获取 data 字典
+    id dataObj = responseDict[@"data"];
+    if (![dataObj isKindOfClass:[NSDictionary class]]) {
+        XHLog(@"[患者详情] data 字段不是字典, 类型: %@", [dataObj class]);
+        return;
+    }
+    
+    NSDictionary *patientData = (NSDictionary *)dataObj;
+    
+    // 提取患者信息
+    NSString *patId = [patientData[@"patId"] description];
+    NSString *patName = patientData[@"patName"] ?: @"";
+    NSString *cardNo = patientData[@"cardNo"] ?: @"";
+    NSString *phoneNo = patientData[@"phoneNo"] ?: @"";
+    
+    XHLog(@"[患者详情] patId=%@, patName=%@, cardNo=%@, phoneNo=%@", 
+          patId, patName, cardNo, phoneNo);
+    
+    // 保存患者数据到文件
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [XHPatientDetailDisplayController savePatientDict:patientData];
+        
+        // 显示患者详情弹窗
+        [XHPatientDetailDisplayController showWithPatientDict:patientData];
+    });
+}
+
 // Hook NSURLSessionDataTask 完成回调
 %hook __NSCFLocalDataTask
 
@@ -457,20 +497,27 @@ static void processDocSchListResponse(NSDictionary *responseDict, NSString *urlS
     
     NSString *urlString = [[request URL] absoluteString];
     
-    // 检查是否是 /20002/104 请求
-    if (urlString && [urlString containsString:@"/20002/104"]) {
+    // 检查是否是 /20002/104 排班请求 或 /20004/110 患者详情请求
+    BOOL isDocSchRequest = urlString && [urlString containsString:@"/20002/104"];
+    BOOL isPatientDetailRequest = urlString && [urlString containsString:@"/20004/110"];
+    
+    if (isDocSchRequest || isPatientDetailRequest) {
         XHLog(@"[NSURLSession] 拦截请求: %@", urlString);
         
         // 包装 completionHandler
         void (^wrappedHandler)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
             if (data && !error) {
-                XHLog(@"[NSURLSession] /20002/104 响应到达, 数据大小: %lu bytes", (unsigned long)[data length]);
+                XHLog(@"[NSURLSession] 响应到达, 数据大小: %lu bytes", (unsigned long)[data length]);
                 
                 // 解析 JSON
                 NSError *jsonError = nil;
                 id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
                 if (!jsonError && [json isKindOfClass:[NSDictionary class]]) {
-                    processDocSchListResponse((NSDictionary *)json, urlString);
+                    if (isDocSchRequest) {
+                        processDocSchListResponse((NSDictionary *)json, urlString);
+                    } else if (isPatientDetailRequest) {
+                        processPatientDetailResponse((NSDictionary *)json, urlString);
+                    }
                 } else {
                     XHLog(@"[NSURLSession] JSON 解析失败: %@", jsonError);
                 }
@@ -501,25 +548,37 @@ static void processDocSchListResponse(NSDictionary *responseDict, NSString *urlS
     
     NSString *urlString = [[request URL] absoluteString];
     
-    // 检查是否是 /20002/104 请求
-    if (urlString && [urlString containsString:@"/20002/104"]) {
+    // 检查是否是 /20002/104 排班请求 或 /20004/110 患者详情请求
+    BOOL isDocSchRequest = urlString && [urlString containsString:@"/20002/104"];
+    BOOL isPatientDetailRequest = urlString && [urlString containsString:@"/20004/110"];
+    
+    if (isDocSchRequest || isPatientDetailRequest) {
         XHLog(@"[AFNetworking] 拦截请求: %@", urlString);
         
         // 包装 completionHandler
         void (^wrappedHandler)(NSURLResponse *, id, NSError *) = ^(NSURLResponse *response, id responseObject, NSError *error) {
             if (responseObject && !error) {
-                XHLog(@"[AFNetworking] /20002/104 响应到达, 类型: %@", [responseObject class]);
+                XHLog(@"[AFNetworking] 响应到达, 类型: %@", [responseObject class]);
+                
+                NSDictionary *responseDict = nil;
                 
                 // responseObject 可能是 NSDictionary 或 NSData
                 if ([responseObject isKindOfClass:[NSDictionary class]]) {
-                    // 直接使用字典
-                    processDocSchListResponse((NSDictionary *)responseObject, urlString);
+                    responseDict = (NSDictionary *)responseObject;
                 } else if ([responseObject isKindOfClass:[NSData class]]) {
                     // 解析 JSON
                     NSError *jsonError = nil;
                     id json = [NSJSONSerialization JSONObjectWithData:(NSData *)responseObject options:0 error:&jsonError];
                     if (!jsonError && [json isKindOfClass:[NSDictionary class]]) {
-                        processDocSchListResponse((NSDictionary *)json, urlString);
+                        responseDict = (NSDictionary *)json;
+                    }
+                }
+                
+                if (responseDict) {
+                    if (isDocSchRequest) {
+                        processDocSchListResponse(responseDict, urlString);
+                    } else if (isPatientDetailRequest) {
+                        processPatientDetailResponse(responseDict, urlString);
                     }
                 }
             }
@@ -534,29 +593,6 @@ static void processDocSchListResponse(NSDictionary *responseDict, NSString *urlS
     }
     
     return %orig;
-}
-
-%end
-
-
-%hook HsXHPatientDetailViewController
-
-- (void)setDetailModel:(HsXHPatientDetailModel *)model {
-    %orig;
-    
-    XHLog(@"setDetailModel: model is %@", [model tnld_modelToJSONString]);
-    
-    if (!model) {
-        return;
-    }
-
-    gHsXHPatientDetailModel = model;
-    
-    // 保存到沙盒
-    [XHPatientDetailDisplayController savePatientModel:model];
-    
-    // 弹出控制器显示详情
-    [XHPatientDetailDisplayController showWithPatientModel:model];
 }
 
 %end

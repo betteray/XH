@@ -93,6 +93,55 @@ static void XHLog(NSString *format, ...) {
     });
 }
 
+#pragma mark - Dictionary-based Methods
+
++ (void)savePatientDict:(NSDictionary *)patientDict {
+    if (!patientDict) return;
+    
+    NSError *error = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:patientDict options:NSJSONWritingPrettyPrinted error:&error];
+    if (error) {
+        XHLog(@"保存失败: 无法序列化为JSON: %@", error);
+        return;
+    }
+    
+    NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    NSString *filePath = [self patientDataFilePath];
+    [jsonString writeToFile:filePath atomically:YES encoding:NSUTF8StringEncoding error:&error];
+    
+    if (error) {
+        XHLog(@"保存患者数据失败: %@", error);
+    } else {
+        XHLog(@"患者数据已保存到: %@", filePath);
+    }
+}
+
++ (void)showWithPatientDict:(NSDictionary *)patientDict {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        XHPatientDetailDisplayController *detailVC = [[XHPatientDetailDisplayController alloc] init];
+        detailVC.patientDict = patientDict;
+        
+        UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:detailVC];
+        navController.modalPresentationStyle = UIModalPresentationFormSheet;
+        
+        // 获取当前最顶层的 ViewController
+        UIWindow *keyWindow = nil;
+        for (UIWindow *window in [UIApplication sharedApplication].windows) {
+            if (window.isKeyWindow) {
+                keyWindow = window;
+                break;
+            }
+        }
+        
+        UIViewController *topVC = keyWindow.rootViewController;
+        while (topVC.presentedViewController) {
+            topVC = topVC.presentedViewController;
+        }
+        
+        [topVC presentViewController:navController animated:YES completion:nil];
+    });
+}
+
 #pragma mark - Lifecycle
 
 - (void)viewDidLoad {
@@ -121,6 +170,39 @@ static void XHLog(NSString *format, ...) {
 }
 
 - (void)prepareData {
+    // Support both model-based and dict-based data
+    if (self.patientDict) {
+        [self prepareDataFromDict];
+    } else if (self.patientModel) {
+        [self prepareDataFromModel];
+    }
+}
+
+- (void)prepareDataFromDict {
+    NSDictionary *dict = self.patientDict;
+    if (!dict) return;
+    
+    // 定义要显示的字段
+    NSArray *keys = @[@"patId", @"patId32", @"patName", @"chnName", @"cardNo", 
+                      @"cardNoType", @"cardNoTypeDesc", @"phoneNo", @"documentId", 
+                      @"relation", @"authStatus", @"authStatusDesc", @"accessPatId", 
+                      @"isDelete", @"hasCanFaceAuth", @"hasShowFaceAuthButton", @"medInsCardNo"];
+    
+    NSMutableArray *values = [NSMutableArray array];
+    for (NSString *key in keys) {
+        id value = dict[key];
+        if (value && value != [NSNull null]) {
+            [values addObject:[NSString stringWithFormat:@"%@", value]];
+        } else {
+            [values addObject:@"(null)"];
+        }
+    }
+    
+    self.dataKeys = keys;
+    self.dataValues = [values copy];
+}
+
+- (void)prepareDataFromModel {
     HsXHPatientDetailModel *model = self.patientModel;
     if (!model) return;
     
