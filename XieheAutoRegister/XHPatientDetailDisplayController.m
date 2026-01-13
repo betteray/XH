@@ -182,11 +182,8 @@ static void XHLog(NSString *format, ...) {
     NSDictionary *dict = self.patientDict;
     if (!dict) return;
     
-    // 定义要显示的字段
-    NSArray *keys = @[@"patId", @"patId32", @"patName", @"chnName", @"cardNo", 
-                      @"cardNoType", @"cardNoTypeDesc", @"phoneNo", @"documentId", 
-                      @"relation", @"authStatus", @"authStatusDesc", @"accessPatId", 
-                      @"isDelete", @"hasCanFaceAuth", @"hasShowFaceAuthButton", @"medInsCardNo"];
+    // 定义要显示的字段 - 只显示基本信息和用于发送请求的关键字段
+    NSArray *keys = @[@"patId", @"patName", @"phoneNo", @"cardNo"];
     
     NSMutableArray *values = [NSMutableArray array];
     for (NSString *key in keys) {
@@ -206,29 +203,14 @@ static void XHLog(NSString *format, ...) {
     HsXHPatientDetailModel *model = self.patientModel;
     if (!model) return;
     
-    self.dataKeys = @[@"patId", @"patId32", @"patName", @"chnName", @"cardNo", 
-                      @"cardNoType", @"cardNoTypeDesc", @"phoneNo", @"documentId", 
-                      @"relation", @"authStatus", @"authStatusDesc", @"accessPatId", 
-                      @"isDelete", @"hasCanFaceAuth", @"hasShowFaceAuthButton", @"medInsCardNo"];
+    // 只显示基本信息和用于发送请求的关键字段
+    self.dataKeys = @[@"patId", @"patName", @"phoneNo", @"cardNo"];
     
     self.dataValues = @[
         [model patId] ?: @"(null)",
-        [model patId32] ?: @"(null)",
         [model patName] ?: @"(null)",
-        [model chnName] ?: @"(null)",
-        [model cardNo] ?: @"(null)",
-        [model cardNoType] ?: @"(null)",
-        [model cardNoTypeDesc] ?: @"(null)",
         [model phoneNo] ?: @"(null)",
-        [model documentId] ?: @"(null)",
-        [model relation] ?: @"(null)",
-        [model authStatus] ?: @"(null)",
-        [model authStatusDesc] ?: @"(null)",
-        [model accessPatId] ?: @"(null)",
-        [model isDelete] ?: @"(null)",
-        [model hasCanFaceAuth] ?: @"(null)",
-        [model hasShowFaceAuthButton] ?: @"(null)",
-        [model medInsCardNo] ?: @"(null)"
+        [model cardNo] ?: @"(null)"
     ];
 }
 
