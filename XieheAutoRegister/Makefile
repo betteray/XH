@@ -10,7 +10,8 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = XieheAutoRegister
 
-XieheAutoRegister_FILES = Tweak.x PreciseGCDTimer.m XHPatientDetailDisplayController.m XHScheduleListController.m
+XieheAutoRegister_FILES = Tweak.xm PreciseGCDTimer.m XHPatientDetailDisplayController.m XHScheduleListController.m \
+	XieheSettings.m XieheSettingsViewController.m
 XieheAutoRegister_CFLAGS = -fobjc-arc
 XieheAutoRegister_FRAMEWORKS = UIKit Foundation
 

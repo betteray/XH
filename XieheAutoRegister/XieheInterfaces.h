@@ -23,8 +23,8 @@
 - (NSString *)URLString;
 - (void)setURLString:(NSString *)urlString;
 - (void)setDataClass:(Class)dataClass;
-- (void)startWithSuccessBlock:(void (^)(id request, int response, id data))success 
-                 failureBlock:(void (^)(id error))failure;
+- (void)startWithSuccessBlock:(void (^)(int request, int response, id data))success 
+                 failureBlock:(void (^)(int error))failure;
 - (void)startAsynchronously:(id)block;
 @end
 

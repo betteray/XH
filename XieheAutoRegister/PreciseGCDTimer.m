@@ -52,12 +52,10 @@
 - (void)handleTimerTrigger {
     NSLog(@"Timer triggered at %@", [NSDate date]);
     
-    // 确保在主线程执行
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.triggerBlock) {
-            self.triggerBlock();
-        }
-    });
+
+    if (self.triggerBlock) {
+        self.triggerBlock();
+    }
     
     // 可以添加业务逻辑
     [self performDailyTask];

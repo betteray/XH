@@ -13,12 +13,10 @@
 #import "XHPatientDetailDisplayController.h"
 #import "XHScheduleListController.h"
 #import "XieheInterfaces.h"
+#import "XieheSettings.h"
+#import "XieheSettingsViewController.h"
 
 // ============== 配置 ==============
-
-// 触发时间配置
-static NSInteger kTriggerHour = 22;            // 触发小时 (24小时制) - 15:00
-static NSInteger kTriggerMinute = 45;           // 触发分钟
 
 
 // ============== 全局变量 ==============
@@ -157,10 +155,10 @@ static void sendRegistrationRequest() {
     [request setDeptId:deptId];
     
     // 发送请求 - 使用空 block 避免崩溃
-    [request startWithSuccessBlock:^(__unused id req, int response, __unused id data) {
+    [request startWithSuccessBlock:^(int req, int response, id data) {
         XHLog(@"✅ 挂号请求成功! response=%d", response);
         
-    } failureBlock:^(__unused id error) {
+    } failureBlock:^(int error) {
         XHLog(@"❌ 挂号请求失败");
     }];
     
@@ -176,17 +174,58 @@ static void sendRegistrationRequest() {
     
     XHLog(@"App 启动，初始化自动挂号模块");
 
-    // 或者方法2的使用
+    // 创建并启动每日触发定时器（使用设置中的时间）
     PreciseGCDTimer *timer = [[PreciseGCDTimer alloc] init];
     timer.triggerBlock = ^{
         sendRegistrationRequest();
     };
-    [timer startDailyAtHour:kTriggerHour minute:kTriggerMinute];
+    [timer startDailyAtHour:XieheGetTriggerHour() minute:XieheGetTriggerMinute()];
     
     // 保存timer引用
     gDailyTimer = timer;
+
+    // 监听设置变更，更新定时器
+    [[NSNotificationCenter defaultCenter] addObserverForName:XieheTriggerTimeChangedNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
+        if (gDailyTimer) {
+            [gDailyTimer stop];
+            gDailyTimer = nil;
+        }
+        PreciseGCDTimer *newTimer = [[PreciseGCDTimer alloc] init];
+        newTimer.triggerBlock = ^{
+            sendRegistrationRequest();
+        };
+        [newTimer startDailyAtHour:XieheGetTriggerHour() minute:XieheGetTriggerMinute()];
+        gDailyTimer = newTimer;
+    }];
     
     return result;
+}
+
+%end
+
+%hook UIViewController
+
+- (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
+    %orig;
+    if (motion == UIEventSubtypeMotionShake) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIWindow *targetWindow = nil;
+            if (@available(iOS 13.0, *)) {
+                for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                    if (w.isKeyWindow) { targetWindow = w; break; }
+                }
+            } else {
+                _Pragma("clang diagnostic push")
+                _Pragma("clang diagnostic ignored \"-Wdeprecated-declarations\"")
+                targetWindow = UIApplication.sharedApplication.keyWindow;
+                _Pragma("clang diagnostic pop")
+            }
+            UIViewController *root = targetWindow.rootViewController ?: UIApplication.sharedApplication.delegate.window.rootViewController;
+            XieheSettingsViewController *vc = [[%c(XieheSettingsViewController) alloc] init];
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+            [root presentViewController:nav animated:YES completion:nil];
+        });
+    }
 }
 
 %end
