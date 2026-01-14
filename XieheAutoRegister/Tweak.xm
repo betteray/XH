@@ -23,6 +23,9 @@
 
 static PreciseGCDTimer *gDailyTimer = nil;
 static HsXHPatientDetailModel *gHsXHPatientDetailModel = nil;  // 保存最后获取的患者信息
+static NSDictionary *gPatientData = nil;  // 预先读取的患者数据
+static NSDictionary *gScheduleData = nil;  // 预先读取的排班数据
+static BOOL gIsDataReady = NO;  // 数据是否已准备好
 
 // ============== 工具函数 ==============
 
@@ -33,8 +36,6 @@ static void XHLog(NSString *format, ...) {
     va_end(args);
     NSLog(@"[XieheAutoReg] %@", message);
 }
-
-// ============== 核心功能 ==============
 
 // 从沙盒读取患者数据
 static NSDictionary* loadPatientDataFromFile() {
@@ -80,62 +81,70 @@ static NSDictionary* loadScheduleDataFromFile() {
     return dict;
 }
 
-static void sendRegistrationRequest() {
-    XHLog(@"开始发送挂号请求...");
-    
+// 预先准备数据（仅读取文件和验证参数）
+static void prepareRegistrationRequest() {
     // 从配置文件读取患者数据
     NSDictionary *patientData = loadPatientDataFromFile();
     if (!patientData) {
-        XHLog(@"错误: 未找到患者数据，请先在App中选择患者");
+        XHLog(@"准备失败: 未找到患者数据");
+        gIsDataReady = NO;
         return;
     }
     
     // 从配置文件读取排班数据
     NSDictionary *scheduleData = loadScheduleDataFromFile();
     if (!scheduleData) {
-        XHLog(@"错误: 未找到排班数据，请先在App中选择排班");
+        XHLog(@"准备失败: 未找到排班数据");
+        gIsDataReady = NO;
         return;
     }
     
-    // 提取患者信息
+    // 验证必要参数
     NSString *patId = patientData[@"patId"];
     NSString *patName = patientData[@"patName"] ?: patientData[@"chnName"];
-    NSString *cardNo = patientData[@"cardNo"];
-    NSString *phoneNo = patientData[@"phoneNo"];
-    
-    // 提取排班信息
     NSString *schId = scheduleData[@"schId"];
-    NSString *accessSchId = scheduleData[@"accessSchId"];
     NSString *subjectId = scheduleData[@"subjectId"];
     NSString *deptId = scheduleData[@"deptId"];
-    NSString *docName = scheduleData[@"docName"];
-    NSString *schDate = scheduleData[@"schDate"];
     
-    // 验证必要参数
     if (!patId || !patName) {
-        XHLog(@"错误: 患者信息不完整 (patId=%@, patName=%@)", patId, patName);
+        XHLog(@"准备失败: 患者信息不完整");
+        gIsDataReady = NO;
         return;
     }
     
     if (!schId || !subjectId || !deptId) {
-        XHLog(@"错误: 排班信息不完整 (schId=%@, subjectId=%@, deptId=%@)", schId, subjectId, deptId);
+        XHLog(@"准备失败: 排班信息不完整");
+        gIsDataReady = NO;
         return;
     }
     
-    XHLog(@"========== 准备发送挂号请求 ==========");
-    XHLog(@"患者信息:");
-    XHLog(@"  patId:    %@", patId);
-    XHLog(@"  patName:  %@", patName);
-    XHLog(@"  cardNo:   %@", cardNo);
-    XHLog(@"  phoneNo:  %@", phoneNo);
-    XHLog(@"排班信息:");
-    XHLog(@"  schId:      %@", schId);
-    XHLog(@"  accessSchId:%@", accessSchId);
-    XHLog(@"  subjectId:  %@", subjectId);
-    XHLog(@"  deptId:     %@", deptId);
-    XHLog(@"  docName:    %@", docName);
-    XHLog(@"  schDate:    %@", schDate);
-    XHLog(@"===========================================");
+    // 保存准备好的数据
+    gPatientData = [patientData copy];
+    gScheduleData = [scheduleData copy];
+    gIsDataReady = YES;
+    
+    XHLog(@"✅ 数据已准备完成 - patId:%@, schId:%@", patId, schId);
+}
+
+static void sendRegistrationRequest() {
+    XHLog(@"发送挂号请求...");
+    
+    // 检查数据是否已准备好
+    if (!gIsDataReady || !gPatientData || !gScheduleData) {
+        XHLog(@"❌ 错误: 数据未准备好，请先选择患者和排班");
+        return;
+    }
+    
+    // 提取患者信息
+    NSString *patId = gPatientData[@"patId"];
+    NSString *patName = gPatientData[@"patName"] ?: gPatientData[@"chnName"];
+    NSString *cardNo = gPatientData[@"cardNo"];
+    NSString *phoneNo = gPatientData[@"phoneNo"];
+    
+    // 提取排班信息
+    NSString *schId = gScheduleData[@"schId"];
+    NSString *subjectId = gScheduleData[@"subjectId"];
+    NSString *deptId = gScheduleData[@"deptId"];
     
     // 创建请求对象
     HsUnifiedRegistrationCommitRequest *request = [[%c(HsUnifiedRegistrationCommitRequest) alloc] init];
@@ -154,7 +163,15 @@ static void sendRegistrationRequest() {
     [request setSubjectId:subjectId];
     [request setDeptId:deptId];
     
-    // 发送请求 - 使用空 block 避免崩溃
+    XHLog(@"========== 发送挂号请求 ==========");
+    XHLog(@"schId:      %@", schId);
+    XHLog(@"patId:      %@", patId);
+    XHLog(@"patName:    %@", patName);
+    XHLog(@"subjectId:  %@", subjectId);
+    XHLog(@"deptId:     %@", deptId);
+    XHLog(@"===================================");
+    
+    // 发送请求
     [request startWithSuccessBlock:^(int req, int response, id data) {
         XHLog(@"✅ 挂号请求成功! response=%d", response);
         
@@ -230,6 +247,18 @@ static void sendRegistrationRequest() {
 
 %end
 
+// 钩取排班保存操作，在保存后准备请求
+%hook XHScheduleListController
+
++ (void)saveSelectedScheduleDict:(NSDictionary *)scheduleDict {
+    %orig;
+    
+    // 排班保存后，尝试准备请求
+    XHLog(@"[Hook] 排班已保存，准备挂号请求");
+    prepareRegistrationRequest();
+}
+
+%end
 
 %hook BaseRequest
 
@@ -371,6 +400,9 @@ static void processPatientDetailResponse(NSDictionary *responseDict, NSString *u
         
         // 显示患者详情弹窗
         [XHPatientDetailDisplayController showWithPatientDict:patientData];
+        
+        // 患者数据保存后，尝试准备请求
+        prepareRegistrationRequest();
     });
 }
 
